@@ -11,7 +11,7 @@ test('actor observation excludes extra runtime state, even when nested or non-en
   Object.defineProperty(actor, 'credentials', { value: 'hidden', enumerable: false });
   const details = displayNode('actor', actor);
   assert.deepEqual(details, {
-    kind: 'actor', id: 'A', supervisorId: 'S', status: 'running',
+    kind: 'actor', id: 'A', supervisorId: 'S', status: 'running', actorKind: 'private',
     mailboxDepth: 2,
   });
   const serialized = JSON.stringify(details);
