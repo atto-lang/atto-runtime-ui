@@ -93,3 +93,15 @@ test('invalid duplicate snapshot IDs fail closed without replacing current tree'
   assert.match(h.elements.get('#error').textContent,/duplicate/i);
   assert.equal(h.elements.get('#tree').children[0],before);
 });
+
+test('failed snapshot POST exits refreshing state and never publishes stale GET', async () => {
+  const h = harness();
+  const clicked = h.elements.get('#refresh').handlers.click();
+  complete(h.pendingGets[0],snapshot('STALE'));
+  h.pendingPosts[0].resolve({ok:false,status:503});
+  await clicked;
+  assert.equal(h.elements.get('#state').textContent,'Unavailable');
+  assert.match(h.elements.get('#error').textContent,/HTTP 503/);
+  assert.equal(h.elements.get('#refresh').disabled,false);
+  assert.equal(h.elements.get('#meta').textContent,'');
+});
