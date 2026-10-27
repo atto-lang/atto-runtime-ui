@@ -64,20 +64,34 @@ function render(snapshot) {
   meta.textContent = supervisors.length + ' supervisors · ' + actors.length + ' actors · ' + (snapshot.finishedAt || 'pending');
   if (partial) showError('Some nodes may be unavailable. Do not interpret missing actors as healthy.');
 }
+let latestSnapshotRequest = 0;
 async function load() {
+  const requestId = ++latestSnapshotRequest;
   try {
     const response = await fetch('/api/v1/supervision/tree',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+    if (requestId !== latestSnapshotRequest) return;
     if (!response.ok) throw Error('Snapshot request failed: HTTP '+response.status);
-    const data = await response.json(); clearError(); render(data);
-  } catch(e) { state.textContent='Unavailable'; showError(e.message || 'Unable to load snapshot'); }
+    const data = await response.json();
+    if (requestId !== latestSnapshotRequest) return;
+    clearError(); render(data);
+  } catch(e) {
+    if (requestId !== latestSnapshotRequest) return;
+    state.textContent='Unavailable'; showError(e.message || 'Unable to load snapshot');
+  }
 }
 refresh.addEventListener('click',async()=>{
+  // A pending initial GET must not overwrite a newer user-requested snapshot.
+  ++latestSnapshotRequest;
   refresh.disabled=true;
+  state.textContent='Refreshing…';
   try {
     const response = await fetch('/api/v1/supervision/snapshots',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}});
     if(!response.ok) throw Error('Snapshot creation failed: HTTP '+response.status);
     await load();
-  } catch(e) { showError(e.message || 'Unable to request snapshot'); }
-  finally { refresh.disabled=false; }
+  } catch(e) {
+    // A failed POST must not leave the UI in its optimistic Refreshing state.
+    state.textContent='Unavailable';
+    showError(e.message || 'Unable to request snapshot');
+  } finally { refresh.disabled=false; }
 });
 load();
