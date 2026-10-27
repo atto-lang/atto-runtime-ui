@@ -45,3 +45,28 @@ test('prototype-inherited fields are never trusted observation metadata', () => 
   source.supervisorId = 'Root';
   assert.deepEqual(displayNode('actor', source), { kind: 'actor', supervisorId: 'Root' });
 });
+
+test('accessor properties are never invoked, including runtime kind', () => {
+  let reads = 0;
+  const actor = { id: 'A', supervisorId: 'Root', mailboxDepth: 3 };
+  for (const field of ['status', 'kind', 'spawnedBy']) {
+    Object.defineProperty(actor, field, { enumerable: true, get() { reads++; throw new Error('executed secret getter'); } });
+  }
+  assert.deepEqual(displayNode('actor', actor), {
+    kind: 'actor', id: 'A', supervisorId: 'Root', mailboxDepth: 3,
+  });
+  assert.equal(reads, 0);
+});
+
+test('prototype names are invalid node kinds', () => {
+  for (const kind of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    assert.throws(() => displayNode(kind, { id: 'A' }), /Invalid runtime node/);
+  }
+});
+
+test('own plain data descriptors and optional nulls remain intact', () => {
+  const supervisor = Object.create(null);
+  Object.defineProperty(supervisor, 'id', { value: 'S' });
+  Object.defineProperty(supervisor, 'parentId', { value: null });
+  assert.deepEqual(displayNode('supervisor', supervisor), { kind: 'supervisor', id: 'S', parentId: null });
+});
