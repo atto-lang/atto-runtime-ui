@@ -87,7 +87,10 @@ refresh.addEventListener('click',async()=>{
     const response = await fetch('/api/v1/supervision/snapshots',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}});
     if(!response.ok) throw Error('Snapshot creation failed: HTTP '+response.status);
     await load();
-  } catch(e) { showError(e.message || 'Unable to request snapshot'); }
-  finally { refresh.disabled=false; }
+  } catch(e) {
+    // A failed POST must not leave the UI in its optimistic Refreshing state.
+    state.textContent='Unavailable';
+    showError(e.message || 'Unable to request snapshot');
+  } finally { refresh.disabled=false; }
 });
 load();
