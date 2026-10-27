@@ -2,7 +2,7 @@
 // runtime-private fields; these must never be reflected in the public DOM.
 const FIELDS = Object.freeze({
   supervisor: ["id", "parentId", "status", "generation", "observedAt"],
-  actor: ["id", "supervisorId", "spawnedBy", "kind", "status", "generation", "observedAt", "mailboxDepth", "inFlightRequests"],
+  actor: ["id", "supervisorId", "spawnedBy", "status", "generation", "observedAt", "mailboxDepth", "inFlightRequests"],
 });
 const MAX_TEXT = 256;
 export function displayNode(kind, source) {
@@ -20,6 +20,9 @@ export function displayNode(kind, source) {
     } else if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
       details[key] = value;
     }
+  }
+  if (kind === 'actor' && Object.prototype.hasOwnProperty.call(source, 'kind') && typeof source.kind === 'string') {
+    details.actorKind = source.kind.slice(0, MAX_TEXT);
   }
   return details;
 }
