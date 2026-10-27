@@ -1,3 +1,4 @@
+import { displayNode } from './snapshot-policy.mjs';
 const tree = document.querySelector('#tree');
 const details = document.querySelector('#details');
 const state = document.querySelector('#state');
@@ -44,7 +45,7 @@ function render(snapshot) {
     row.textContent = (kind === 'supervisor' ? '▣ ' : '◉ ') + node.id;
     const badge = document.createElement('span'); badge.className='badge';
     badge.textContent = node.status || 'unknown'; row.append(badge);
-    row.addEventListener('click', () => { details.textContent = JSON.stringify({kind,...node}, null, 2); });
+    row.addEventListener('click', () => { details.textContent = JSON.stringify(displayNode(kind,node), null, 2); });
     container.append(row);
     if (kind === 'supervisor') {
       const children = byParent.get(node.id) || [];

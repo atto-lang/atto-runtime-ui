@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
+import {displayNode} from '../web/snapshot-policy.mjs';
 
-const source = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8')
+  .replace(/^import \{ displayNode \} from '\.\/snapshot-policy\.mjs';\n/, '');
 function deferred() {
   let resolve;
   const promise = new Promise(r => { resolve = r; });
@@ -30,7 +32,8 @@ function harness() {
       createElement: element,
       createDocumentFragment: element,
     },
-    fetch(url, options) {
+    displayNode,
+    fetch(url, options = {}) {
       const d = deferred();
       if (options.method === 'POST') pendingPosts.push(d);
       else pendingGets.push(d);
