@@ -1,97 +1,155 @@
-import { displayNode } from './snapshot-policy.mjs';
+import { displayNode, validateSnapshot, MAX_DEPTH } from './snapshot-policy.mjs';
 const tree = document.querySelector('#tree');
 const details = document.querySelector('#details');
 const state = document.querySelector('#state');
 const meta = document.querySelector('#meta');
 const error = document.querySelector('#error');
 const refresh = document.querySelector('#refresh');
-const MAX_NODES = 10000;
+const MAX_RESPONSE_BYTES = 1024 * 1024;
+const DEFAULT_GET = '/api/v1/supervision/tree';
 function showError(message) { error.textContent = message; error.hidden = false; }
 function clearError() { error.hidden = true; error.textContent = ''; }
-function safeId(value) { return typeof value === 'string' && value.length > 0 && value.length <= 256; }
-function render(snapshot) {
-  if (!snapshot || snapshot.schemaVersion !== 1 || !Array.isArray(snapshot.supervisors) || !Array.isArray(snapshot.actors)) throw Error('Unsupported snapshot schema');
-  const {supervisors, actors} = snapshot;
-  if (supervisors.length + actors.length > MAX_NODES) throw Error('Snapshot exceeds UI node limit');
-  const ids = new Set();
-  for (const n of [...supervisors, ...actors]) {
-    if (!safeId(n.id) || ids.has(n.id)) throw Error('Invalid or duplicate runtime node ID');
-    ids.add(n.id);
+function clearSnapshot() {
+  tree.replaceChildren();
+  details.textContent = 'Select a supervisor or actor.';
+  meta.textContent = '';
+}
+function render(untrusted, expectedSnapshotId = null) {
+  const snapshot = validateSnapshot(untrusted);
+  if (expectedSnapshotId !== null && snapshot.snapshotId !== expectedSnapshotId) {
+    throw Error('Snapshot identity mismatch');
   }
-  const supervisorIds = new Set(supervisors.map(s => s.id));
-  for (const s of supervisors) if (s.parentId != null && !supervisorIds.has(s.parentId)) throw Error('Orphan supervisor');
-  for (const a of actors) if (!supervisorIds.has(a.supervisorId)) throw Error('Orphan actor');
+  const { supervisors, actors } = snapshot;
   const byParent = new Map();
   for (const s of supervisors) {
-    const key = s.parentId;
-    if (!byParent.has(key)) byParent.set(key, []);
-    byParent.get(key).push({kind:'supervisor', node:s});
+    if (!byParent.has(s.parentId)) byParent.set(s.parentId, []);
+    byParent.get(s.parentId).push({ kind: 'supervisor', node: s });
   }
   for (const a of actors) {
     if (!byParent.has(a.supervisorId)) byParent.set(a.supervisorId, []);
-    byParent.get(a.supervisorId).push({kind:'actor', node:a});
+    byParent.get(a.supervisorId).push({ kind: 'actor', node: a });
   }
-  const roots = byParent.get(null) || [];
-  if (supervisors.length && !roots.length) throw Error('Missing root supervisor');
-  const visited = new Set();
   const fragment = document.createDocumentFragment();
   function append(entry, container, depth) {
-    if (depth > 64) throw Error('Supervision depth exceeded');
-    const {kind,node} = entry;
-    if (visited.has(node.id)) throw Error('Cycle or duplicate supervisor edge');
-    visited.add(node.id);
+    if (depth > MAX_DEPTH) throw Error('Supervision depth exceeded');
+    const {kind, node} = entry;
     const row = document.createElement('button');
-    row.type = 'button'; row.className = 'node'; row.setAttribute('role','treeitem');
+    row.type = 'button'; row.className = 'node'; row.setAttribute('role', 'treeitem');
     row.textContent = (kind === 'supervisor' ? '▣ ' : '◉ ') + node.id;
-    const badge = document.createElement('span'); badge.className='badge';
-    badge.textContent = node.status || 'unknown'; row.append(badge);
-    row.addEventListener('click', () => { details.textContent = JSON.stringify(displayNode(kind,node), null, 2); });
+    const badge = document.createElement('span'); badge.className = 'badge';
+    badge.textContent = node.status; row.append(badge);
+    row.addEventListener('click', () => { details.textContent = JSON.stringify(displayNode(kind, node), null, 2); });
     container.append(row);
     if (kind === 'supervisor') {
       const children = byParent.get(node.id) || [];
       if (children.length) {
-        const group = document.createElement('div'); group.className='children'; group.setAttribute('role','group');
+        const group = document.createElement('div'); group.className = 'children'; group.setAttribute('role', 'group');
         container.append(group);
-        for (const child of children) append(child,group,depth+1);
+        for (const child of children) append(child, group, depth + 1);
       }
     }
   }
-  for (const root of roots) append(root,fragment,0);
-  if (visited.size !== ids.size) throw Error('Unreachable nodes in supervision tree');
+  for (const root of byParent.get(null) || []) append(root, fragment, 0);
   tree.replaceChildren(fragment);
-  const partial = snapshot.status !== 'complete';
-  state.textContent = partial ? '⚠ Partial snapshot' : '● Snapshot complete';
-  meta.textContent = supervisors.length + ' supervisors · ' + actors.length + ' actors · ' + (snapshot.finishedAt || 'pending');
-  if (partial) showError('Some nodes may be unavailable. Do not interpret missing actors as healthy.');
+  if (snapshot.status === 'complete') {
+    state.textContent = '● Snapshot complete';
+  } else if (snapshot.status === 'pending') {
+    state.textContent = 'Snapshot pending';
+  } else {
+    state.textContent = '⚠ Partial snapshot';
+    showError('Some nodes may be unavailable. Do not interpret missing actors as healthy.');
+  }
+  meta.textContent = supervisors.length + ' supervisors · ' + actors.length + ' actors · ' +
+    (snapshot.finishedAt || 'pending') + ' · ' + snapshot.snapshotId;
+  return snapshot.status;
 }
-let latestSnapshotRequest = 0;
-async function load() {
-  const requestId = ++latestSnapshotRequest;
+async function readJsonBounded(response) {
+  const type = response.headers?.get?.('content-type');
+  if (type && !/^application\/(?:json|[a-z0-9.+-]+\+json)(?:\s*;|\s*$)/i.test(type)) {
+    throw Error('Unexpected API response content type');
+  }
+  const declared = response.headers?.get?.('content-length');
+  if (declared != null && declared !== '') {
+    if (!/^\d+$/.test(declared) || Number(declared) > MAX_RESPONSE_BYTES) throw Error('API response exceeds byte limit');
+  }
+  if (!response.body?.getReader) return response.json(); // Node test harness / non-streaming response.
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8', {fatal: true});
+  let bytes = 0;
+  let result = '';
   try {
-    const response = await fetch('/api/v1/supervision/tree',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
-    if (requestId !== latestSnapshotRequest) return;
-    if (!response.ok) throw Error('Snapshot request failed: HTTP '+response.status);
-    const data = await response.json();
-    if (requestId !== latestSnapshotRequest) return;
-    clearError(); render(data);
-  } catch(e) {
-    if (requestId !== latestSnapshotRequest) return;
-    state.textContent='Unavailable'; showError(e.message || 'Unable to load snapshot');
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_RESPONSE_BYTES) throw Error('API response exceeds byte limit');
+      result += decoder.decode(value, {stream: true});
+    }
+    result += decoder.decode();
+    return JSON.parse(result);
+  } finally {
+    reader.cancel().catch(() => {});
   }
 }
-refresh.addEventListener('click',async()=>{
-  // A pending initial GET must not overwrite a newer user-requested snapshot.
-  ++latestSnapshotRequest;
-  refresh.disabled=true;
-  state.textContent='Refreshing…';
+let latestRequest = 0;
+let currentGet = null;
+async function load(url = DEFAULT_GET, expectedSnapshotId = null) {
+  const request = ++latestRequest;
+  currentGet?.abort();
+  const controller = new AbortController();
+  currentGet = controller;
   try {
-    const response = await fetch('/api/v1/supervision/snapshots',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'}});
-    if(!response.ok) throw Error('Snapshot creation failed: HTTP '+response.status);
-    await load();
-  } catch(e) {
-    // A failed POST must not leave the UI in its optimistic Refreshing state.
-    state.textContent='Unavailable';
+    const response = await fetch(url, {
+      credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+      headers: {Accept: 'application/json'},
+    });
+    if (request !== latestRequest) return;
+    if (!response.ok) throw Error('Snapshot request failed: HTTP ' + response.status);
+    const data = await readJsonBounded(response);
+    if (request !== latestRequest) return;
+    const status = render(data, expectedSnapshotId);
+    clearError();
+    if (status === 'partial') showError('Some nodes may be unavailable. Do not interpret missing actors as healthy.');
+    return status;
+  } catch (e) {
+    if (request !== latestRequest) return;
+    clearSnapshot();
+    state.textContent = 'Unavailable';
+    showError(e.message || 'Unable to load snapshot');
+  } finally {
+    if (currentGet === controller) currentGet = null;
+  }
+}
+refresh.addEventListener('click', async () => {
+  if (refresh.disabled) return;
+  ++latestRequest;
+  currentGet?.abort();
+  refresh.disabled = true;
+  clearSnapshot();
+  clearError();
+  state.textContent = 'Refreshing…';
+  try {
+    const token = document.querySelector('meta[name="csrf-token"]')?.content;
+    if (typeof token !== 'string' || token.length < 16 || token.length > 512) {
+      throw Error('Snapshot request unavailable: missing CSRF token');
+    }
+    const response = await fetch('/api/v1/supervision/snapshots', {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: {Accept: 'application/json', 'X-CSRF-Token': token},
+    });
+    if (!response.ok) throw Error('Snapshot creation failed: HTTP ' + response.status);
+    const receipt = await readJsonBounded(response);
+    const id = receipt?.snapshotId;
+    if (typeof id !== 'string' || id.length === 0 || id.length > 256 || /[\u0000-\u001f\u007f]/.test(id)) {
+      throw Error('Snapshot creation did not return an identity');
+    }
+    await load('/api/v1/supervision/snapshots/' + encodeURIComponent(id), id);
+  } catch (e) {
+    clearSnapshot();
+    state.textContent = 'Unavailable';
     showError(e.message || 'Unable to request snapshot');
-  } finally { refresh.disabled=false; }
+  } finally {
+    refresh.disabled = false;
+  }
 });
 load();
