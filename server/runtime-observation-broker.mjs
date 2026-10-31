@@ -40,7 +40,7 @@ function immutableNode(node, fields) {
   for (const key of fields) selected[key] = own(node, key);
   return Object.freeze(selected);
 }
-function project(raw, grant, maxNodes) {
+function project(raw, grant, maxNodes, maxDepth) {
   if (own(raw, 'tenantId') !== grant.tenantId ||
       own(raw, 'scopeRootId') !== grant.scopeRootId ||
       own(raw, 'scopeGeneration') !== grant.scopeGeneration) fail('INVALID_SNAPSHOT');
@@ -90,6 +90,19 @@ function project(raw, grant, maxNodes) {
     if (roots.length !== 1 || roots[0].id !== grant.scopeRootId ||
         roots[0].generation !== grant.scopeGeneration) fail('INVALID_SNAPSHOT');
   }
+  // Enforce the caller's stricter depth budget too, not just the UI's 64-level cap.
+  const supervisorById = new Map(supervisors.map(node => [node.id, node]));
+  function depthFor(node, isActor) {
+    let depth = isActor ? 1 : 0;
+    let cursor = isActor ? supervisorById.get(node.supervisorId) : node;
+    while (cursor && cursor.parentId !== null) {
+      if (++depth > maxDepth) fail('INVALID_SNAPSHOT');
+      cursor = supervisorById.get(cursor.parentId);
+    }
+    if (depth > maxDepth) fail('INVALID_SNAPSHOT');
+  }
+  for (const node of supervisors) depthFor(node, false);
+  for (const node of actors) depthFor(node, true);
   // Reject unexpected tree size even when a trusted adapter misbehaves. The
   // browser's separate 1 MiB limit is not a substitute for a server bound.
   if (Buffer.byteLength(JSON.stringify(snapshot), 'utf8') > MAX_BYTES) fail('INVALID_SNAPSHOT');
@@ -152,9 +165,11 @@ export function createRuntimeObservationBroker({source, monotonicMs = () => perf
   });
 
   const broker = Object.freeze({
-    async readSnapshot({subject, grant: token, maxNodes = MAX_NODES,
-      maxDepth = MAX_DEPTH, timeoutMs = MAX_WAIT_MS} = {}) {
+    async readSnapshot({subject, grant: token, maxNodes,
+      maxDepth, timeoutMs = MAX_WAIT_MS} = {}) {
       const grant = getGrant(token, subject);
+      maxNodes ??= grant.maxNodes;
+      maxDepth ??= grant.maxDepth;
       if (!safeLimit(maxNodes, grant.maxNodes) || !safeLimit(maxDepth, grant.maxDepth) ||
           !safeLimit(timeoutMs, MAX_WAIT_MS)) fail('DENIED');
       if (active.size >= MAX_ACTIVE || perGrant.has(token)) fail('BUSY');
@@ -167,12 +182,15 @@ export function createRuntimeObservationBroker({source, monotonicMs = () => perf
       perGrant.add(token);
       // Retain quota until underlying work actually settles, even after a
       // timeout: a noncooperating native adapter may still be running.
-      const sourcePromise = Promise.resolve().then(() => source.snapshot({
-        tenantId: grant.tenantId,
-        scopeRootId: grant.scopeRootId,
-        scopeGeneration: grant.scopeGeneration,
-        maxNodes, maxDepth, deadlineMs, signal: controller.signal,
-      }));
+      const sourcePromise = Promise.resolve().then(() => {
+        if (grant.revoked || closed || controller.signal.aborted) fail('DENIED');
+        return source.snapshot({
+          tenantId: grant.tenantId,
+          scopeRootId: grant.scopeRootId,
+          scopeGeneration: grant.scopeGeneration,
+          maxNodes, maxDepth, deadlineMs, signal: controller.signal,
+        });
+      });
       sourcePromise.then(
         () => { active.delete(task); perGrant.delete(token); },
         () => { active.delete(task); perGrant.delete(token); },
@@ -188,7 +206,7 @@ export function createRuntimeObservationBroker({source, monotonicMs = () => perf
         // revocation, expiry, a closed broker, or a stale session identity.
         getGrant(token, subject);
         if (monotonicMs() >= deadlineMs) fail('DEADLINE_EXCEEDED');
-        return project(raw, grant, maxNodes);
+        return project(raw, grant, maxNodes, maxDepth);
       } catch (err) {
         if (err instanceof ObservationError && err.code === 'INVALID_SNAPSHOT') throw err;
         if (grant.revoked || closed) fail('DENIED');
