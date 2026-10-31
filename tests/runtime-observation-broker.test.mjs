@@ -138,3 +138,25 @@ test('broker close aborts pending work and denies new grants and reads', async (
     scopeGeneration:3,ttlMs:100}),code('DENIED'));
   d.resolve(fixture());await settled();
 });
+
+test('runtime adapter cannot exceed narrower authorized depth', async () => {
+  const expanded = fixture();
+  expanded.supervisors.push({id:'child',parentId:'root',status:'running',generation:1,observedAt:TS});
+  expanded.actors[0].supervisorId='child';
+  const h = harness(() => expanded);
+  await assert.rejects(h.broker.readSnapshot({...args(h.grant),maxDepth:1}),code('INVALID_SNAPSHOT'));
+});
+test('omitted request limits use the grant limits, not global defaults', async () => {
+  const h = harness();
+  const result = await h.broker.readSnapshot({subject,grant:h.grant,timeoutMs:100});
+  assert.equal(result.status, 'complete');
+});
+test('immediate grant revocation prevents even scheduling a CONTROL request', async () => {
+  let called = 0;
+  const h = harness(() => {called++; return fixture()});
+  const read = h.broker.readSnapshot(args(h.grant));
+  h.authority.revoke(h.grant);
+  await assert.rejects(read,code('DENIED'));
+  await settled();
+  assert.equal(called,0);
+});
