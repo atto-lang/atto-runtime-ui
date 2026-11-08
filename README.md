@@ -70,3 +70,14 @@ Example snapshot:
 5. Run exact-tree CI on Java/GraalVM and LLVM; distinguish source tests from host-only substrate tests.
 
 See source compiler RFC: oreslang-source.java PR #1758.
+
+## Repository ownership and migration (2026-11-08)
+
+**AttoLang** is the public language name; the current repository is still `ores-truffle-oreslang/oreslang-runtime-ui` (legacy namespace). Preserve existing `oreslang-*` identifiers, old commands and `.ores` compatibility until migration and feature support are independently verified.
+
+- **Belongs here:** portable UI runtime surface and host/platform adapters.
+- **Does not belong here:** managed deployment control planes and unverified UI thread guarantees.
+- **Ownership:** [`atto-lang`](https://github.com/atto-lang) owns language, compiler, tooling, portable core/std, conformance and developer ecosystem; [`atto-co`](https://github.com/atto-co) owns separately governed hosted runtime, deployment, identity, billing and cloud operations. An existing similarly named `atto-*` repo does not automatically contain this repo's code or retain its numeric identity.
+- **Proposed first destination:** `atto-lang/oreslang-runtime-ui` via an approved *GitHub repository transfer* preserving numeric ID/history/name. The existing plan authorizes **no** direct legacy-org transfer to `atto-co`; future product spinouts need their own approval.
+
+**Cutover instructions:** coordinate in [migration issue #26](https://github.com/ores-truffle-oreslang/.github/issues/26) and consult the private [runbook draft #25](https://github.com/ores-truffle-oreslang/.github/pull/25). Require named source/target admins and independent security reviewer, exact head SHA/tree, target protection/rulesets, permissions, Actions and actual executed steps, secrets, releases, Pages, packages, apps, webhooks, open PRs, consumers and rollback owner before any transfer; never mirror private code without separate authorization. Verify unchanged GitHub ID/tree and control parity afterward, update clients separately, and execute exact-head tests. Zero-step Actions are `NOT_EXECUTED`; host-only checks are not compiled-guest evidence. No forced language/CLI rename or production capability claims.
