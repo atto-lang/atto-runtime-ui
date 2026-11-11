@@ -4,7 +4,9 @@ A runtime supervision-tree inspector, with an Oreslang-native HTTP server as the
 
 ## Status
 
-Architecture and wire contract only. The repository was empty at initialization. No native Oreslang server or compiler-level supervisor declaration has been demonstrated yet.
+An executable Java runtime adapter, loopback read-only gateway, and browser UI now run against real AttoLang guest actors. This reconciles UI PR #5 rather than replacing its broker. The guest fixture creates actors, sends messages, and stops actors; Java only embeds the runtime and observes registry metadata. See [the live proof instructions](integration/README.md).
+
+The architecture below remains the target for distributed reserved CONTROL snapshots and a native AttoLang HTTP server. Those are not implemented by the loopback host adapter. No compiler-level supervisor declaration or multi-backend parity is claimed.
 
 ## Supervision versus spawn lineage
 

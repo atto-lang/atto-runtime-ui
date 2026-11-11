@@ -49,3 +49,10 @@ The caller's `subject` is an already-authenticated server-side session **object 
 Run `npm test` on Node 22+ for the browser and broker adversarial suites. This establishes only JavaScript contract execution, not native Oreslang guest or CONTROL conformance. No browser direct actor subscription, SSE event relay, HTTP authentication, CSRF, CSP or production network server is provided here. Implement the native read-only adapter, HTTP session boundary, exact-head JDK25/GraalVM tests, LLVM execution and remaining backend parity before any live exposure.
 
 The intended typed publisher contracts remain in [common-source PR #200](https://github.com/ores-truffle-oreslang/oreslang-common-source/pull/200) and [Java PR #2345](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/2345). Do not duplicate the ObservableActor trait. Any source Actions jobs with no executed steps are still unverified. Do not export private source to another organization without security/provenance approval.
+
+## Live Java adapter integration
+
+`live-server.mjs` now connects the broker to the real Java runtime registry using
+`integration/InspectorHost.java`. See `integration/README.md` for executed local
+scope and limits. This supplies the local embedding observation path; distributed
+reserved CONTROL fanout and remote user authentication remain separate work.

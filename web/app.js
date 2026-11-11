@@ -10,6 +10,7 @@ const DEFAULT_GET = '/api/v1/supervision/tree';
 function showError(message) { error.textContent = message; error.hidden = false; }
 function clearError() { error.hidden = true; error.textContent = ''; }
 function clearSnapshot() {
+  globalThis.clearTimeout?.(staleTimer);
   tree.replaceChildren();
   details.textContent = 'Select a supervisor or actor.';
   meta.textContent = '';
@@ -20,6 +21,11 @@ function render(untrusted, expectedSnapshotId = null) {
     throw Error('Snapshot identity mismatch');
   }
   const { supervisors, actors } = snapshot;
+  globalThis.clearTimeout?.(staleTimer);
+  staleTimer = globalThis.setTimeout?.(() => {
+    state.textContent = '⚠ Stale observation';
+    showError('This observation is over 5 seconds old. Refresh to observe the runtime again.');
+  }, Math.max(0, 5000 - (Date.now() - Date.parse(snapshot.finishedAt || snapshot.startedAt))));
   const byParent = new Map();
   for (const s of supervisors) {
     if (!byParent.has(s.parentId)) byParent.set(s.parentId, []);
@@ -38,6 +44,12 @@ function render(untrusted, expectedSnapshotId = null) {
     row.textContent = (kind === 'supervisor' ? '▣ ' : '◉ ') + node.id;
     const badge = document.createElement('span'); badge.className = 'badge';
     badge.textContent = node.status; row.append(badge);
+    if (kind === 'actor') {
+      const counts = document.createElement('span');
+      counts.textContent = ' · queue ' + (node.mailboxDepth ?? 'unknown') +
+        (node.kind === 'unmanaged-supervision-unknown' ? ' · supervision unknown' : '');
+      row.append(counts);
+    }
     row.addEventListener('click', () => { details.textContent = JSON.stringify(displayNode(kind, node), null, 2); });
     container.append(row);
     if (kind === 'supervisor') {
@@ -91,6 +103,7 @@ async function readJsonBounded(response) {
     reader.cancel().catch(() => {});
   }
 }
+let staleTimer = null;
 let latestRequest = 0;
 let currentGet = null;
 async function load(url = DEFAULT_GET, expectedSnapshotId = null) {
@@ -129,6 +142,10 @@ refresh.addEventListener('click', async () => {
   clearError();
   state.textContent = 'Refreshing…';
   try {
+    if (document.querySelector('meta[name="observation-mode"]')?.content === 'read-only') {
+      await load();
+      return;
+    }
     const token = document.querySelector('meta[name="csrf-token"]')?.content;
     if (typeof token !== 'string' || token.length < 16 || token.length > 512) {
       throw Error('Snapshot request unavailable: missing CSRF token');

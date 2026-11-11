@@ -1,0 +1,24 @@
+define actor Worker as
+  on_start(): void {
+    stdio.stdout.write("HOLD");
+    return;
+  }
+  receive(ActorMail<String> mail): void {
+    if mail.value == "PRIVATE-PAYLOAD-ONE"; do
+      val child = spawn Worker();
+    fi
+    if mail.value == "stop"; do
+      self.end();
+    fi
+    return;
+  }
+end
+pub async routine main(): void {
+  val worker = spawn Worker();
+  worker.send("PRIVATE-PAYLOAD-ONE");
+  worker.send("PRIVATE-PAYLOAD-TWO");
+  worker.send("stop");
+  await worker.get_done();
+  stdio.stdout.write("guest-complete");
+  return;
+}
