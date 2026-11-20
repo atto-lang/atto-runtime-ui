@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Oreslang Runtime Inspector</title><link rel="stylesheet" href="./style.css"></head>
+<body><header><div><h1>Oreslang Runtime Inspector</h1><p>Supervision hierarchy · live runtime diagnostics</p></div><button id="refresh" type="button">Request snapshot</button></header>
+<main><section class="status"><strong id="state">Connecting…</strong><span id="meta"></span></section><section id="error" role="alert" hidden></section><section class="layout"><div class="panel"><h2>Supervision tree</h2><div id="tree" role="tree" aria-label="Supervision tree"></div></div><aside class="panel"><h2>Selected node</h2><pre id="details">Select a supervisor or actor.</pre></aside></section></main>
+<footer>Read-only inspector. No actor state or mailbox payloads are exposed.</footer><script type="module" src="./app.js"></script></body></html>
