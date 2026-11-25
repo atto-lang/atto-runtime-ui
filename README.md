@@ -1,83 +1,50 @@
-# Oreslang Runtime UI
+> **AI agent instructions (organization-wide):** Before working on code, issues, or pull requests, read and follow the [organization `AGENTS.md`](https://github.com/atto-lang/.github/blob/main/AGENTS.md), including its **merge-first stealth-development policy**. Honor any repository-local `AGENTS.md`, explicit holds, and GitHub-enforced rules.
 
-A runtime supervision-tree inspector, with an Oreslang-native HTTP server as the target implementation.
+# atto-runtime-ui
 
-## Status
+Runtime UI abstractions and reusable interface infrastructure for AttoLang applications.
 
-Architecture and wire contract only. The repository was empty at initialization. No native Oreslang server or compiler-level supervisor declaration has been demonstrated yet.
+## Naming migration and language authority
 
-## Supervision versus spawn lineage
+This repository is maintained at [atto-lang/atto-runtime-ui](https://github.com/atto-lang/atto-runtime-ui); use `https://github.com/atto-lang/atto-runtime-ui.git` for Git remotes and canonical `.atto` source examples. The normative language contract is [atto-spec](https://github.com/atto-lang/atto-spec), with executable guest evidence tracked by [atto-platform-conformance](https://github.com/atto-lang/atto-platform-conformance). Follow current ownership, borrowing, effects, actor, and syntax rules there; do not infer implemented features from a README or unexecuted CI.
 
-An ordinary actor A spawning B does not promote A into a supervisor. B inherits A's supervisor unless a separately authorized supervisor explicitly admits B. A distinct `define supervisor S as ... end` (proposed source syntax) may be declared beside A and can launch B during S's admitted startup turn. A's spawn ancestry and S's supervision tree remain distinct.
+## Scope
 
-```
-RootSupervisor
-├── S
-│   ├── A
-│   └── B
-└── OtherSupervisor
-    └── C
-```
+UI integration contracts, rendering/event adapters, and target-specific surface capabilities.
 
-## Root snapshot protocol
+## Compatibility and design
 
-The root sends an authenticated, runtime-reserved `SnapshotRequest(epoch, deadline, maxNodes, maxDepth)` down supervisor CONTROL edges. Each supervisor obtains an atomic local registry snapshot, fans out to its direct child supervisors, and merges bounded responses. Ordinary actor mailboxes MUST NOT receive privileged CONTROL packets.
+This package is intended to integrate with [AttoLang](https://github.com/atto-lang) while clearly separating portable language behavior from backend- and host-specific features. Document APIs, target restrictions, and security/trust boundaries.
 
-A snapshot returns **observed**, **unresponsive**, and **terminated-during-snapshot** states. It is not a globally atomic image: every node carries observation timestamp and registry generation. Timeouts produce partial reports, never an invented healthy status.
+## Development and verification
 
-- Supervisor records: opaque id, parent id, status, generation, policy, pending CONTROL, dropped CONTROL, observedAt.
-- Actor records: opaque id, owning supervisor id, spawning actor id (if any), actor kind, lifecycle, mailbox depth, in-flight requests, observedAt.
-- Tree edges are *supervision*; separate `spawnedBy` links preserve actor ancestry.
-- Runtime snapshot IDs are internal, non-user-forgeable; no UUID required per actor request. Stable opaque handles may be generation-tagged.
-- Cycles, duplicate node IDs, stale generations, excessive fanout/depth, partial results and concurrent termination must be rejected or explicitly flagged.
-- Sensitive actor state, mailbox payloads, tokens, credentials and exception strings must not be exposed.
+Refer to checked-in sources and CI workflows for verified build and test commands. Include platform-specific execution tests and publish exact-commit evidence before asserting backend parity or production readiness.
 
-## API v1 (read-only)
+## Project status
 
-`GET /api/v1/supervision/tree` — bounded last-completed snapshot.
-`POST /api/v1/supervision/snapshots` — request a fresh snapshot (requires privileged auth; rate limited).
-`GET /api/v1/supervision/snapshots/{id}` — status or result; pending/partial/complete.
-`GET /api/v1/supervision/events` — authenticated SSE stream of sanitized lifecycle deltas.
+This README describes the intended repository scope and does not imply implemented functionality or verified target coverage.
 
-Example snapshot:
+## Related
 
-```json
-{
-  "schemaVersion": 1,
-  "snapshotId": "sample-42",
-  "status": "partial",
-  "startedAt": "2026-10-20T20:00:00Z",
-  "finishedAt": "2026-10-20T20:00:01Z",
-  "supervisors": [
-    {"id":"root","parentId":null,"status":"running","generation":1,"observedAt":"2026-10-20T20:00:00Z"},
-    {"id":"S","parentId":"root","status":"running","generation":3,"observedAt":"2026-10-20T20:00:00Z"}
-  ],
-  "actors": [
-    {"id":"A","supervisorId":"S","spawnedBy":null,"kind":"private","status":"running","observedAt":"2026-10-20T20:00:00Z"},
-    {"id":"B","supervisorId":"S","spawnedBy":"A","kind":"private","status":"running","observedAt":"2026-10-20T20:00:00Z"}
-  ],
-  "missingSupervisorIds": [],
-  "warnings": []
-}
-```
+- [Language specification](https://github.com/atto-lang/atto-spec)
+- [Platform conformance](https://github.com/atto-lang/atto-platform-conformance)
 
-## Implementation stages
+## Repository ownership and contribution routing
 
-1. Define supervisor-tree registry and authenticated snapshot CONTROL request/response with bounded aggregation and generation fencing in Java runtime, then LLVM.
-2. Add compiler-lowered `define supervisor`, `on_start`, and root bootstrap; test source-level S launches B.
-3. Build a native Oreslang HTTP actor exposing sanitized read-only snapshots. It must communicate through an explicit authorized observability capability, not through arbitrary actor heap access.
-4. Build a small static browser UI: expandable supervision tree, actor details, health badges, counters, partial-result banners, and SSE deltas. No mutation controls until authorization/audit semantics are proven.
-5. Run exact-tree CI on Java/GraalVM and LLVM; distinguish source tests from host-only substrate tests.
+**Belongs here:** Backend-neutral UI surface and event abstractions, rendering bridge contracts, lifecycle interfaces and portable .atto UI primitives.
 
-See source compiler RFC: oreslang-source.java PR #1758.
+**Belongs elsewhere:** OS-specific packaging, windowing and device access belong in atto-platform.desktop/mobile; DOM host adapters in atto-browser.
 
-## Repository ownership and migration (2026-11-08)
+**Security and portability boundary:** UI-thread ownership, handle/generation fences, input validation, capability limits and no cross-thread unsafe access require executable tests.
 
-**AttoLang** is the public language name; the current repository is still `ores-truffle-oreslang/oreslang-runtime-ui` (legacy namespace). Preserve existing `oreslang-*` identifiers, old commands and `.ores` compatibility until migration and feature support are independently verified.
+AttoLang is the canonical project name; new source, examples and documentation use `.atto` and the `atto-lang` repository organization. This README defines scope, not feature readiness.
 
-- **Belongs here:** portable UI runtime surface and host/platform adapters.
-- **Does not belong here:** managed deployment control planes and unverified UI thread guarantees.
-- **Ownership:** [`atto-lang`](https://github.com/atto-lang) owns language, compiler, tooling, portable core/std, conformance and developer ecosystem; [`atto-co`](https://github.com/atto-co) owns separately governed hosted runtime, deployment, identity, billing and cloud operations. An existing similarly named `atto-*` repo does not automatically contain this repo's code or retain its numeric identity.
-- **Proposed first destination:** `atto-lang/oreslang-runtime-ui` via an approved *GitHub repository transfer* preserving numeric ID/history/name. The existing plan authorizes **no** direct legacy-org transfer to `atto-co`; future product spinouts need their own approval.
+**Acceptance:** name exact source SHA/tree, runtime/toolchain, positive and negative checks and execution receipt before claiming support. Host-only tests and empty CI steps do not prove guest execution.
 
-**Cutover instructions:** coordinate in [migration issue #26](https://github.com/ores-truffle-oreslang/.github/issues/26) and consult the private [runbook draft #25](https://github.com/ores-truffle-oreslang/.github/pull/25). Require named source/target admins and independent security reviewer, exact head SHA/tree, target protection/rulesets, permissions, Actions and actual executed steps, secrets, releases, Pages, packages, apps, webhooks, open PRs, consumers and rollback owner before any transfer; never mirror private code without separate authorization. Verify unchanged GitHub ID/tree and control parity afterward, update clients separately, and execute exact-head tests. Zero-step Actions are `NOT_EXECUTED`; host-only checks are not compiled-guest evidence. No forced language/CLI rename or production capability claims.
+## Legacy migration and verification gates
+
+The historical predecessor was `ores-truffle-oreslang/oreslang-runtime-ui`. This repository is now maintained in `atto-lang`; a similarly named repository or imported history does not by itself establish preservation of the original numeric repository ID, source parity or compiler support. Preserve working legacy `.ores` inputs, old package names and CLI references until compatibility and replacement paths have been verified; new source follows the canonical `.atto` specification.
+
+Portable UI contracts and host adapters belong here; managed deployment and unverified UI-thread guarantees do not. [atto-lang](https://github.com/atto-lang) owns language, tooling and portable examples/libraries; [atto-co](https://github.com/atto-co) owns separately governed hosted deployment, tenant infrastructure, registry, identity and billing. Any further original-ID transfer or managed-product carve-out requires separate owner authorization; no direct legacy-org move to atto-co is authorized by this document.
+
+Before an actual transfer, coordinate with the [migration issue](https://github.com/ores-truffle-oreslang/.github/issues/26) and authorized reviewers; inventory numeric ID, exact HEAD/tree, history, access, branch protections/rulesets, open PRs, packages, releases, CI/runners, secrets, webhooks, apps, Pages, dependencies and rollback ownership. Never disclose or mirror private code without authorization. After transfer, verify ID/tree/history and security controls, then execute exact-head tests before changing consumer references. Empty CI steps are NOT_EXECUTED; host-only checks are not compiled guest evidence.
