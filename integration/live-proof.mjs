@@ -7,11 +7,14 @@ if (!compiler) throw Error('COMPILER_DIR required');
 const output = process.env.EVIDENCE_DIR ?? '/tmp/atto-inspector-proof';
 await mkdir(output,{recursive:true});
 const cp = `${compiler}/target/classes:integration/classes:${(await readFile('integration/classpath.txt','utf8')).trim()}`;
+const redact = text => text.replace(/(READY \d+ )\S+/g, '$1[REDACTED]');
+const quoteTest = spawn(process.env.JAVA_BIN ?? '/Library/Java/JavaVirtualMachines/graalvm-25.jdk/Contents/Home/bin/java', ['-cp',cp,'InspectorHost','--test-json-quote'], {stdio:'inherit'});
+await new Promise((resolve,reject)=>{quoteTest.once('error',reject);quoteTest.once('exit',code=>code===0?resolve():reject(Error('JSON quote test failed: '+code)));});
 async function run(mode) {
  const child=spawn('/Library/Java/JavaVirtualMachines/graalvm-25.jdk/Contents/Home/bin/java',['-Dpolyglot.engine.WarnInterpreterOnly=false','-cp',cp,'InspectorHost','integration/inspector.atto']);
  let log='',err=''; child.stdout.on('data',b=>{log+=b;}); child.stderr.on('data',b=>{err+=b;});
  const exited=new Promise(resolve=>child.on('exit',(code,signal)=>resolve({code,signal})));
- const until=async predicate=>{for(let i=0;i<500;i++){if(predicate())return; if(log.includes('GUEST_FAILED'))throw Error(log+err); await new Promise(r=>setTimeout(r,10));}throw Error('Timed out\n'+log+err);};
+ const until=async predicate=>{for(let i=0;i<500;i++){if(predicate())return; if(log.includes('GUEST_FAILED'))throw Error(redact(log+err)); await new Promise(r=>setTimeout(r,10));}throw Error('Timed out\n'+redact(log+err));};
  let ui;
  try {
   await until(()=>/READY (\d+) (\S+)/.test(log));
@@ -49,7 +52,7 @@ async function run(mode) {
  } finally {
   if(ui)await ui.close(); child.stdin.end('exit\n');
   const result=await exited;
-  await writeFile(`${output}/${mode}-java.log`,log+'\nSTDERR\n'+err+'\nEXIT '+JSON.stringify(result)+'\n');
+  await writeFile(`${output}/${mode}-java.log`,redact(log)+'\nSTDERR\n'+redact(err)+'\nEXIT '+JSON.stringify(result)+'\n');
   assert.equal(result.code,0);
  }
 }
