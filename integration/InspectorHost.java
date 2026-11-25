@@ -11,7 +11,23 @@ import java.util.concurrent.*;
 public final class InspectorHost {
   static String quote(Object s) {
     if (s == null) return "null";
-    return "\"" + s.toString().replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"";
+    StringBuilder out = new StringBuilder("\"");
+    String value = s.toString();
+    for (int i = 0; i < value.length(); i++) {
+      char ch = value.charAt(i);
+      switch (ch) {
+        case '"' -> out.append("\\\"");
+        case '\\' -> out.append("\\\\");
+        default -> {
+          if (ch < 0x20 || Character.isSurrogate(ch)) {
+            out.append("\\u");
+            for (int shift = 12; shift >= 0; shift -= 4)
+              out.append("0123456789abcdef".charAt((ch >>> shift) & 15));
+          } else out.append(ch);
+        }
+      }
+    }
+    return out.append('"').toString();
   }
   static String record(Object value) {
     if (value instanceof Number || value instanceof Boolean) return value.toString();
@@ -27,6 +43,21 @@ public final class InspectorHost {
     return quote(value);
   }
   public static void main(String[] args) throws Exception {
+    if (args.length == 1 && args[0].equals("--test-json-quote")) {
+      if (!quote(null).equals("null") || !quote("").equals("\"\""))
+        throw new AssertionError("null/empty JSON quote");
+      for (int i = 0; i < 32; i++) {
+        String expected = String.format("\"\\u%04x\"", i);
+        if (!quote(String.valueOf((char)i)).equals(expected))
+          throw new AssertionError("invalid control character encoding");
+      }
+      if (!quote("\"\\").equals("\"\\\"\\\\\"") ||
+          !quote("\ud83d\ude00").equals("\"\\ud83d\\ude00\"") ||
+          !quote("\ud800").equals("\"\\ud800\""))
+        throw new AssertionError("quote/backslash/surrogate encoding");
+      System.out.println("PASS JSON quote");
+      return;
+    }
     CountDownLatch release = new CountDownLatch(1);
     OutputStream guestOutput = new OutputStream() {
       final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
